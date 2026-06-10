@@ -1,0 +1,20 @@
+diff --git a/src/Content/ContentReaders/Texture2DReader.cs b/src/Content/ContentReaders/Texture2DReader.cs
+index e54d68e..dace55a 100644
+--- a/src/Content/ContentReaders/Texture2DReader.cs
++++ b/src/Content/ContentReaders/Texture2DReader.cs
+@@ -114,8 +114,13 @@ namespace Microsoft.Xna.Framework.Content
+ 			{
+ 				int levelDataSizeInBytes = reader.ReadInt32();
+ 				byte[] levelData = null; // Don't assign this quite yet...
+-				int levelWidth = width >> level;
+-				int levelHeight = height >> level;
++				/* Clamp to 1 like Texture2D.SetData does: for non-square textures the
++				 * narrow dimension hits 0 partway down the mip chain (e.g. 512x32 at
++				 * level 6 -> 8x0), and the Dxt->Color conversion below would then
++				 * produce a 0-byte level that SetData rejects ("rect").
++				 */
++				int levelWidth = Math.Max(width >> level, 1);
++				int levelHeight = Math.Max(height >> level, 1);
+ 				if (level >= levelCountOutput)
+ 				{
+ 					continue;

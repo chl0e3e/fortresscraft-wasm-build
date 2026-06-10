@@ -43,7 +43,20 @@ if [ ! -d "$STATICS/emsdk/upstream" ] && [ ! -d "$STATICS/emsdk/emscripten" ]; t
   unzip -q -o "$STATICS/emsdk.zip" -d "$STATICS"
 fi
 
-# ---- 2. publish the head (untrimmed, plain dll for the patcher) -------------
+# ---- 2. patch managed FNA, then publish the head (untrimmed) ----------------
+# Mip-chain clamp for the Dxt->Color conversion path (WebGL contexts where FNA3D
+# reports no S3TC): width/height>>level hits 0 on non-square textures and the
+# decompressed level comes out empty, which SetData rejects ("rect").
+echo "==== apply managed FNA patches ===="
+if git -C "$REPO/FNA" apply --check "$ROOT/patches/FNA-mip-clamp.patch" 2>/dev/null; then
+  git -C "$REPO/FNA" apply "$ROOT/patches/FNA-mip-clamp.patch"
+  echo "applied FNA-mip-clamp.patch"
+else
+  git -C "$REPO/FNA" apply --reverse --check "$ROOT/patches/FNA-mip-clamp.patch" \
+    && echo "FNA-mip-clamp.patch already applied" \
+    || { echo "FNA-mip-clamp.patch does not apply"; exit 1; }
+fi
+
 echo "==== dotnet publish FortressCraft.Wasm.Native ===="
 rm -rf "$HEAD/bin" "$HEAD/obj"
 dotnet publish "$HEAD/FortressCraft.Wasm.Native.csproj" -c Release \
