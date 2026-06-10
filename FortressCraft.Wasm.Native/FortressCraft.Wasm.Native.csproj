@@ -102,8 +102,9 @@
     <NativeFileReference Include="..\wasm-build\out\FNA3D.a" />
     <NativeFileReference Include="..\wasm-build\out\mojoshader.a" ScanForPInvokes="false" />
     <NativeFileReference Include="..\wasm-build\out\FAudio.a" />
-    <!-- __Native registers emscripten_set_main_loop etc. as a static P/Invoke module. -->
-    <NativeFileReference Include="..\FNA\wasm\__Native.c" />
+    <!-- __Native registers emscripten_set_main_loop etc. as a static P/Invoke module.
+         Lives in the head (ours, not upstream FNA) so a fresh FNA submodule checkout has it. -->
+    <NativeFileReference Include="__Native.c" />
     <!-- WASMFS OPFS/fetch mounts (content delivery) + thread-dump helper. -->
     <NativeFileReference Include="Emscripten.c" />
   </ItemGroup>
