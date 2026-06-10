@@ -1,0 +1,44 @@
+# =============================================================================
+# GitHub Actions: build the publishable FortressCraft.Wasm.Native bundle.
+# Place at .github/workflows/build-bundle.yml. Depends on the native libs from
+# build-native-wasm.yml (built in-line here via build-native.sh for a one-shot run).
+# =============================================================================
+name: Build FortressCraft wasm bundle
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    name: Native stack + net10 OffscreenCanvas head
+    env:
+      EMSDK_VERSION: 3.1.56
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive          # FNA + its native submodules (FNA3D/FAudio). NO game code.
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+      - name: Install build deps
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y ninja-build cmake git build-essential python-is-python3 unzip
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install wasm workloads
+        run: dotnet workload install wasm-tools wasm-experimental
+      - name: Build native FNA stack (ABI-matched to FNA 26.06)
+        working-directory: wasm-build
+        run: bash build-native.sh
+      - name: Build bundle (provision toolchain + publish + seds)
+        working-directory: wasm-build
+        run: bash build-bundle.sh
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortresscraft-wasm-bundle
+          path: wasm-build/bundle/

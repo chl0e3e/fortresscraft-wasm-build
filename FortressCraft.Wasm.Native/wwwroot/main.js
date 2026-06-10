@@ -1,0 +1,52 @@
+// FortressCraft.Wasm.Native boot — threads + OffscreenCanvas.
+//
+// With WasmEnableThreads, the runtime + FNA run on a worker ("deputy") thread. The single
+// `<canvas class="canvas">` is TRANSFERRED to that worker as an OffscreenCanvas by the
+// dotnet.native.js `transferredCanvasNames=[".canvas"]` sed (applied post-build by
+// build-bundle.sh). So FNA3D creates its WebGL2 context on the SAME thread it draws from —
+// fixing the deputy-thread "getParameter on undefined GLctx" crash that the SDL2 head hit.
+import { dotnet } from './_framework/dotnet.js';
+
+const canvas = document.querySelector('canvas.canvas');
+
+const api = await dotnet
+    .withConfig({ pthreadPoolInitialSize: 16 })
+    .withModuleConfig({
+        canvas,
+        print: (m) => console.log('[native]', m),
+        printErr: (m) => {
+            if (typeof m === 'string' && m.includes('emscripten_set_main_loop_timing')) return;
+            console.error('[native]', m);
+        },
+    })
+    .create();
+
+const Module = api.Module;
+if (Module) Module.canvas = canvas;
+
+// --- Content + saves via WASMFS (Emscripten.c mounts) ---------------------------------------
+// WASMFS replaces the legacy MEMFS; lazy XHR files don't apply. Instead mount an HTTP-fetch
+// backend over the static server's /Content (assets fetched on first read) and an OPFS backend
+// for persistent /saves. mount_fetch/mount_opfs are KEEPALIVE C funcs in Emscripten.c.
+try {
+    const baseHref = location.href.slice(0, location.href.lastIndexOf('/') + 1);
+    const r1 = Module.ccall('mount_fetch', 'number', ['string', 'string'], [baseHref + 'Content', '/Content']);
+    console.log('[content] mount_fetch(/Content) ->', r1);
+    const r2 = Module.ccall('mount_opfs', 'number', ['string'], ['/saves']);
+    console.log('[saves] mount_opfs(/saves) ->', r2);
+} catch (e) {
+    console.error('[fs] mount failed (will iterate on the server build):', e);
+}
+
+// FNA drives the loop via emscripten_set_main_loop(simulate_infinite_loop=1), which throws the
+// Emscripten 'unwind' marker to keep the runtime alive while requestAnimationFrame ticks.
+try {
+    await api.runMain();
+} catch (e) {
+    const msg = (e && (e.message ?? e.toString?.())) ?? String(e);
+    if (e === 'unwind' || msg === 'unwind' || msg.includes('unwind')) {
+        console.log('[main] FNA main loop running (requestAnimationFrame on worker)');
+    } else {
+        throw e;
+    }
+}

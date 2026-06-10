@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FortressCraft (wasm, OffscreenCanvas)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    /* The class MUST be ".canvas" — the dotnet.native.js OffscreenCanvas sed transfers
+       transferredCanvasNames=[".canvas"] to the worker thread FNA runs on. */
+    canvas.canvas { display: block; width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <canvas class="canvas" id="canvas" tabindex="-1"></canvas>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

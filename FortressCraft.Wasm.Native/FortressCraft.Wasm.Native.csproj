@@ -1,0 +1,129 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- ===========================================================================
+       FortressCraft.Wasm.Native — net10 OffscreenCanvas browser head.
+
+       Fixes the deputy-thread / WebGL wall: with WasmEnableThreads, ALL managed code
+       (Main + FNA) runs on a worker, but a <canvas>-bound WebGL context lives on the UI
+       thread -> GLctx undefined on the worker. OffscreenCanvas TRANSFERS the canvas to the
+       worker so FNA3D's GL context is created on the same thread FNA runs on.
+
+       Mirrors the proven MercuryWorkshop celeste-wasm loader recipe (_ref/celeste-wasm),
+       swapping Celeste for FortressCraft. Builds on a SERVER (GitHub Actions / Docker) —
+       see wasm-build/ and browser-plan.md. NOT meant to build on the dev laptop.
+
+       GAME-AGNOSTIC: this builds runtime + FNA + native libs + a reflective loader only. NO game
+       code. SeeOneModLoader injects the player's own browser-patched FortressCraft.dll per-player.
+
+       PROVISIONING (done by the server build before `dotnet publish`):
+         wasm-build/out/{SDL3,FNA3D,mojoshader,FAudio}.a   <- build-native.sh (FNA 26.06 ABI)
+         wasm-build/statics/dotnet/                         <- celeste dotnet.zip (custom mono rt)
+         wasm-build/statics/emsdk/                          <- celeste emsdk.zip (OffscreenCanvas-patched)
+       ============================================================================ -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>FortressCraftLoader</AssemblyName>
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
+
+    <!-- Link-free patcher pipeline: ship plain .dll (not webcil) + untrimmed, so SeeOneModLoader
+         can Cecil-patch FortressCraft.dll + drop in mods with NO relink / NO SDK on the player. -->
+    <WasmEnableWebcil>false</WasmEnableWebcil>
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <CompressionEnabled>false</CompressionEnabled>
+
+    <!-- Threads (SharedArrayBuffer + COOP/COEP) — FortressCraft spins worker threads at world load. -->
+    <WasmEnableThreads>true</WasmEnableThreads>
+    <WasmEnableSIMD>true</WasmEnableSIMD>
+    <WasmEnableExceptionHandling>true</WasmEnableExceptionHandling>
+    <WasmBuildNative>true</WasmBuildNative>
+    <WasmNativeStrip>false</WasmNativeStrip>
+
+    <!-- Steamworks/Win32 P/Invokes don't exist in the browser; never-called ones become abort-stubs. -->
+    <WasmAllowUndefinedSymbols>true</WasmAllowUndefinedSymbols>
+
+    <!-- THE OffscreenCanvas link flags (+ WebGL2 for the voxel renderer).
+         MAXIMUM_MEMORY = 4 GiB - 64 KiB (one wasm page), as celeste uses. -->
+    <EmccExtraLDFlags>-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 -sGL_ENABLE_GET_PROC_ADDRESS=1 -sWASMFS -sOFFSCREENCANVAS_SUPPORT -sMAXIMUM_MEMORY=4294901760 -sMALLOC=mimalloc -sNO_EXIT_RUNTIME=1</EmccExtraLDFlags>
+    <EmccEnvironment>web,worker</EmccEnvironment>
+
+    <!-- Custom toolchain (FNA-version-INDEPENDENT, reused from celeste's prebuilts):
+         the OffscreenCanvas-patched emsdk + the threaded mono runtime pack. Provisioned by the
+         server step into wasm-build/statics/. -->
+    <EmsdkRoot>$(MSBuildProjectDirectory)\..\wasm-build\statics\emsdk\</EmsdkRoot>
+    <WasmCachePath>$(EmsdkRoot)\emscripten\cache\</WasmCachePath>
+    <__EmscriptenSdkToolsPath>$(EmsdkRoot)</__EmscriptenSdkToolsPath>
+    <__EmscriptenUpstreamBinPath>$(EmsdkRoot)bin/</__EmscriptenUpstreamBinPath>
+    <__EmscriptenUpstreamEmscriptenPath>$(EmsdkRoot)emscripten/</__EmscriptenUpstreamEmscriptenPath>
+    <__EmscriptenNodeToolsPath>$(EmsdkRoot)node/bin/node</__EmscriptenNodeToolsPath>
+    <__WasmClang>$(EmsdkRoot)emscripten/emcc</__WasmClang>
+    <MicrosoftNetCoreAppRuntimePackDir>$(MSBuildProjectDirectory)\..\wasm-build\statics\dotnet</MicrosoftNetCoreAppRuntimePackDir>
+    <MicrosoftNetCoreAppRuntimePackRidDir>$(MicrosoftNetCoreAppRuntimePackDir)\runtimes\browser-wasm</MicrosoftNetCoreAppRuntimePackRidDir>
+  </PropertyGroup>
+
+  <!-- AOT only the runtime + FNA (they never change). FortressCraft.dll + mods STAY INTERPRETED
+       so the patcher can swap them with no relink (the whole point of the pipeline). -->
+  <PropertyGroup>
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <WasmStripILAfterAOT>false</WasmStripILAfterAOT>
+    <WasmDedup>false</WasmDedup>
+  </PropertyGroup>
+  <ItemGroup>
+    <AOTWhitelist Include="System.Private.CoreLib" />
+    <AOTWhitelist Include="System.Collections" />
+    <AOTWhitelist Include="System.Collections.Concurrent" />
+    <AOTWhitelist Include="mscorlib" />
+    <AOTWhitelist Include="netstandard" />
+    <AOTWhitelist Include="FNA" />
+    <AOTWhitelist Include="FortressCraftLoader" />
+    <!-- NB: the injected game assembly is intentionally NOT AOT'd — it stays interpreted so the
+         patcher can swap it with no relink (the whole point of the link-free pipeline). -->
+  </ItemGroup>
+
+  <!-- GAME-AGNOSTIC: the only managed reference is open-source FNA. The game assembly
+       (FortressCraft.dll + its deps), browser-patched from the PLAYER'S OWN install by
+       SeeOneModLoader, is injected into _framework per-player and booted reflectively
+       (see Program.cs). The server build therefore contains ZERO copyrighted code. -->
+  <ItemGroup>
+    <ProjectReference Include="..\FNA\FNA.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Keep all of FNA's surface (the injected game calls arbitrary XNA APIs via the interpreter). -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="FNA" />
+  </ItemGroup>
+
+  <!-- ABI-matched native FNA stack, built -pthread/SDL3 by wasm-build/build-native.sh.
+       File names (sans ext) MUST match the managed [DllImport] module names. -->
+  <ItemGroup>
+    <NativeFileReference Include="..\wasm-build\out\SDL3.a" />
+    <NativeFileReference Include="..\wasm-build\out\FNA3D.a" />
+    <NativeFileReference Include="..\wasm-build\out\mojoshader.a" ScanForPInvokes="false" />
+    <NativeFileReference Include="..\wasm-build\out\FAudio.a" />
+    <!-- __Native registers emscripten_set_main_loop etc. as a static P/Invoke module. -->
+    <NativeFileReference Include="..\FNA\wasm\__Native.c" />
+    <!-- WASMFS OPFS/fetch mounts (content delivery) + thread-dump helper. -->
+    <NativeFileReference Include="Emscripten.c" />
+  </ItemGroup>
+
+  <!-- Point emscripten at the custom (frozen, patched) emsdk instead of the SDK-bundled one. -->
+  <Target Name="ChangeClang" DependsOnTargets="_InitializeCommonProperties" BeforeTargets="_SetupEmscripten">
+    <PropertyGroup>
+      <EmscriptenSdkToolsPath>$(__EmscriptenSdkToolsPath)</EmscriptenSdkToolsPath>
+      <EmscriptenUpstreamBinPath>$(__EmscriptenUpstreamBinPath)</EmscriptenUpstreamBinPath>
+      <EmscriptenUpstreamEmscriptenPath>$(__EmscriptenUpstreamEmscriptenPath)</EmscriptenUpstreamEmscriptenPath>
+      <EmscriptenNodeToolsPath>$(__EmscriptenNodeToolsPath)</EmscriptenNodeToolsPath>
+      <WasmClang>$(__WasmClang)</WasmClang>
+    </PropertyGroup>
+  </Target>
+
+  <!-- Overlay the custom threaded mono runtime pack (celeste dotnet.zip contents). -->
+  <Target Name="UpdateRuntimePack" AfterTargets="ResolveFrameworkReferences">
+    <ItemGroup>
+      <ResolvedRuntimePack PackageDirectory="$(MicrosoftNetCoreAppRuntimePackDir)"
+        Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
+    </ItemGroup>
+  </Target>
+</Project>
