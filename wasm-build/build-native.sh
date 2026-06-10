@@ -32,7 +32,7 @@ PATCHES="$ROOT/patches"
 mkdir -p "$WORK" "$OUT"
 
 echo "############################################################"
-echo "# emcc: $(command -v emcc)"; emcc -v 2>&1 | head -1
+echo "# emcc: $(command -v emcc)"; { emcc -v 2>&1 | head -1; } || true   # head closes the pipe -> emcc(Python) exits 74 (SIGPIPE); don't let pipefail abort
 echo "# SDL=$SDL_VERSION FNA3D=$FNA3D_VERSION FAudio=$FAUDIO_VERSION"
 echo "# work=$WORK out=$OUT"
 echo "############################################################"
