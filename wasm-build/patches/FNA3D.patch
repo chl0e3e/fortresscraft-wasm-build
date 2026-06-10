@@ -1,0 +1,14 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4f50a6e..d293368 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -148,7 +148,8 @@ endif()
+ 
+ # Build flags
+ if(NOT MSVC)
+-	set_property(TARGET FNA3D PROPERTY COMPILE_FLAGS "-std=gnu99 -Wall -Wno-strict-aliasing -pedantic")
++	set_property(TARGET FNA3D PROPERTY COMPILE_FLAGS "-pthread -std=gnu99 -Wall -Wno-strict-aliasing -pedantic")
++	set_property(TARGET mojoshader PROPERTY COMPILE_FLAGS "-pthread")
+ endif()
+ if(BUILD_SHARED_LIBS)
+ 	set_property(TARGET mojoshader PROPERTY POSITION_INDEPENDENT_CODE ON)

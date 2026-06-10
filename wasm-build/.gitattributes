@@ -1,0 +1,5 @@
+# Server build runs on Linux — these MUST stay LF regardless of host autocrlf.
+*.sh        text eol=lf
+*.patch     -text
+Dockerfile  text eol=lf
+*.yml       text eol=lf

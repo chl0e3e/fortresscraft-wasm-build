@@ -1,0 +1,48 @@
+# =============================================================================
+# GitHub Actions: build the -pthread native FNA stack on a runner (the SERVER).
+#
+# Place at .github/workflows/build-native-wasm.yml in the repo you push. Modeled
+# on r58Playz/FNA-WASM-Build but pinned to FortressCraft's FNA 26.06 versions, so
+# the resulting SDL3/FNA3D/FAudio/mojoshader .a archives are ABI-matched to our
+# managed FNA. Download the "fc-wasm-native-libs" artifact and feed it to the
+# FortressCraft.Wasm.Native head (see build-bundle below / browser-plan.md).
+#
+# (Kept here as .github-workflow-*.yml so it doesn't auto-run until you move it
+# into .github/workflows/ of the repo you actually push to GitHub.)
+# =============================================================================
+name: Build FNA native (wasm, pthread)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'wasm-build/**'
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    name: SDL3 + FNA3D + FAudio (pthread)
+    env:
+      SDL_VERSION: release-3.4.4
+      FNA3D_VERSION: "26.06"
+      FAUDIO_VERSION: "26.06"
+      EMSDK_VERSION: 3.1.56
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+      - name: Install build deps
+        run: |
+          sudo apt-get -y update
+          sudo apt-get install -y ninja-build cmake git build-essential python-is-python3
+      - name: Verify emcc
+        run: emcc -v
+      - name: Build native FNA stack
+        working-directory: wasm-build
+        run: bash build-native.sh
+      - name: Upload libs
+        uses: actions/upload-artifact@v4
+        with:
+          name: fc-wasm-native-libs
+          path: wasm-build/out/*.a
