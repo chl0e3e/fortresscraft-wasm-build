@@ -74,6 +74,10 @@ sed -i 's/var offscreenCanvases \?= \?{};/var offscreenCanvases={};if(globalThis
 sed -i 's/this.appendULeb(32768)/this.appendULeb(65535)/' "$FW"/dotnet.runtime.*.js
 # (c) route EM_ASM GL calls to the owning thread instead of asserting.
 sed -i 's/return runEmAsmFunction(code, sigPtr, argbuf);/return runMainThreadEmAsm(code, sigPtr, argbuf, 1);/' "$FW"/dotnet.native.*.js
+# (d) emscripten 3.1.56 dep bug: glUniform*iv is emitted but its $miniTempWebGLIntBuffers
+#     scratch array is not (only the Float twin is) -> first int-uniform upload throws
+#     "miniTempWebGLIntBuffers is not defined" and kills the GL worker. Define it alongside.
+sed -i 's/var miniTempWebGLFloatBuffersStorage = new Float32Array(288);/var miniTempWebGLFloatBuffersStorage = new Float32Array(288);var miniTempWebGLIntBuffers=[];var miniTempWebGLIntBuffersStorage=new Int32Array(288);for(var __i=0;__i<288;++__i){miniTempWebGLIntBuffers[__i]=miniTempWebGLIntBuffersStorage.subarray(0,__i+1);}/' "$FW"/dotnet.native.*.js
 
 # ---- 4. stage the bundle ----------------------------------------------------
 OUT="$ROOT/bundle"
