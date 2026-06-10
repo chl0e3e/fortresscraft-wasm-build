@@ -31,6 +31,8 @@
          can Cecil-patch FortressCraft.dll + drop in mods with NO relink / NO SDK on the player. -->
     <WasmEnableWebcil>false</WasmEnableWebcil>
     <PublishTrimmed>false</PublishTrimmed>
+    <TrimMode>partial</TrimMode>      <!-- only consulted if trimming ran; the AOT bypass keeps it off -->
+
     <InvariantGlobalization>true</InvariantGlobalization>
     <CompressionEnabled>false</CompressionEnabled>
 
@@ -126,5 +128,28 @@
       <ResolvedRuntimePack PackageDirectory="$(MicrosoftNetCoreAppRuntimePackDir)"
         Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
     </ItemGroup>
+  </Target>
+
+  <!-- The wasm SDK refuses AOT unless PublishTrimmed=true, but we keep the publish UNTRIMMED so the
+       patcher can swap FortressCraft.dll with no relink. Flip the flag true ONLY just before AOT, so
+       the SDK's trim-check passes while the actual publish/trim stage already ran untrimmed. (celeste) -->
+  <Target Name="BypassWasmAOTTrimCheck" BeforeTargets="_WasmAotCompileApp">
+    <PropertyGroup>
+      <PublishTrimmed>true</PublishTrimmed>
+    </PropertyGroup>
+    <Message Text="Bypassing wasm AOT trim check (publish already ran untrimmed)" Importance="High" />
+  </Target>
+
+  <!-- AOT only the whitelisted assemblies (runtime + FNA + loader); force everything else (the injected
+       game dll + mods) to stay INTERPRETED so the patcher can swap them. (celeste's AOTOnlyCorlib) -->
+  <Target Name="AOTOnlyCorlib" BeforeTargets="_WasmAotCompileApp">
+    <PropertyGroup>
+      <_AOTWhitelist>|@(AOTWhitelist, '|')|</_AOTWhitelist>
+    </PropertyGroup>
+    <ItemGroup>
+      <_AOT_InternalForceInterpretAssemblies Include="@(_WasmAssembliesInternal)"
+        Condition="!$([System.String]::new('$(_AOTWhitelist)').Contains('|%(Filename)|'))" />
+    </ItemGroup>
+    <Message Text="AOT filter enabled: only whitelist assemblies are AOT-compiled" Importance="High" />
   </Target>
 </Project>
