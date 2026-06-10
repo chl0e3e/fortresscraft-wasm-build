@@ -59,7 +59,9 @@
     <__EmscriptenSdkToolsPath>$(EmsdkRoot)</__EmscriptenSdkToolsPath>
     <__EmscriptenUpstreamBinPath>$(EmsdkRoot)bin/</__EmscriptenUpstreamBinPath>
     <__EmscriptenUpstreamEmscriptenPath>$(EmsdkRoot)emscripten/</__EmscriptenUpstreamEmscriptenPath>
-    <__EmscriptenNodeToolsPath>$(EmsdkRoot)node/bin/node</__EmscriptenNodeToolsPath>
+    <!-- Node ROOT dir: BrowserWasmApp.targets appends bin/node itself (DOTNET_EMSCRIPTEN_NODE_JS).
+         The zip's binary is at node/bin/node, so pointing this at the binary doubles the suffix. -->
+    <__EmscriptenNodeToolsPath>$(EmsdkRoot)node/</__EmscriptenNodeToolsPath>
     <__WasmClang>$(EmsdkRoot)emscripten/emcc</__WasmClang>
     <MicrosoftNetCoreAppRuntimePackDir>$(MSBuildProjectDirectory)\..\wasm-build\statics\dotnet</MicrosoftNetCoreAppRuntimePackDir>
     <MicrosoftNetCoreAppRuntimePackRidDir>$(MicrosoftNetCoreAppRuntimePackDir)\runtimes\browser-wasm</MicrosoftNetCoreAppRuntimePackRidDir>
@@ -111,7 +113,12 @@
     <NativeFileReference Include="Emscripten.c" />
   </ItemGroup>
 
-  <!-- Point emscripten at the custom (frozen, patched) emsdk instead of the SDK-bundled one. -->
+  <!-- Point emscripten at the custom (frozen, patched) emsdk instead of the SDK-bundled one.
+       The PATH item surgery matters as much as the properties: the final link runs plain `emcc`
+       resolved from EmscriptenPrependPATH, and the workload pack's entries are evaluated into that
+       item BEFORE any target runs. Without removing them the pack's UNPATCHED emcc links (loses the
+       OffscreenCanvas system-lib patch, rebuilds our frozen cache from 3.1.56 sources, and resolves
+       node via DOTNET_EMSCRIPTEN_NODE_JS). (celeste's ChangeClang/ChangeClang2.) -->
   <Target Name="ChangeClang" DependsOnTargets="_InitializeCommonProperties" BeforeTargets="_SetupEmscripten">
     <PropertyGroup>
       <EmscriptenSdkToolsPath>$(__EmscriptenSdkToolsPath)</EmscriptenSdkToolsPath>
@@ -120,6 +127,31 @@
       <EmscriptenNodeToolsPath>$(__EmscriptenNodeToolsPath)</EmscriptenNodeToolsPath>
       <WasmClang>$(__WasmClang)</WasmClang>
     </PropertyGroup>
+    <ItemGroup>
+      <EmscriptenPrependPATH Remove="@(EmscriptenPrependPATH)" Condition="$([System.String]::new('%(Identity)').Contains('dotnet/packs/'))" />
+      <EmscriptenPrependPATH Include="$(EmscriptenSdkToolsPath)" />
+      <EmscriptenPrependPATH Include="$(EmscriptenUpstreamBinPath)" />
+      <EmscriptenPrependPATH Include="$([MSBuild]::NormalizeDirectory($(EmscriptenSdkToolsPath), 'emscripten'))" />
+      <EmscriptenPrependPATH Include="$([MSBuild]::NormalizeDirectory($(EmscriptenNodeToolsPath), 'bin'))" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="ChangeClang2" DependsOnTargets="_GenerateManagedToNative" BeforeTargets="_WasmCompileNativeSourceFiles">
+    <PropertyGroup>
+      <EmscriptenSdkToolsPath>$(__EmscriptenSdkToolsPath)</EmscriptenSdkToolsPath>
+      <EmscriptenUpstreamBinPath>$(__EmscriptenUpstreamBinPath)</EmscriptenUpstreamBinPath>
+      <EmscriptenUpstreamEmscriptenPath>$(__EmscriptenUpstreamEmscriptenPath)</EmscriptenUpstreamEmscriptenPath>
+      <EmscriptenNodeToolsPath>$(__EmscriptenNodeToolsPath)</EmscriptenNodeToolsPath>
+      <WasmClang>$(__WasmClang)</WasmClang>
+    </PropertyGroup>
+    <ItemGroup>
+      <EmscriptenPrependPATH Remove="@(EmscriptenPrependPATH)" Condition="$([System.String]::new('%(Identity)').Contains('dotnet/packs/'))" />
+      <EmscriptenPrependPATH Include="$(EmscriptenSdkToolsPath)" />
+      <EmscriptenPrependPATH Include="$(EmscriptenUpstreamBinPath)" />
+      <EmscriptenPrependPATH Include="$([MSBuild]::NormalizeDirectory($(EmscriptenSdkToolsPath), 'emscripten'))" />
+      <EmscriptenPrependPATH Include="$([MSBuild]::NormalizeDirectory($(EmscriptenNodeToolsPath), 'bin'))" />
+      <EmscriptenEnvVars Include="PATH=$(EmscriptenSdkToolsPath):$(EmscriptenUpstreamBinPath):$([MSBuild]::NormalizeDirectory($(EmscriptenSdkToolsPath), 'emscripten')):$([MSBuild]::NormalizeDirectory($(EmscriptenNodeToolsPath), 'bin')):$(PATH)" />
+    </ItemGroup>
   </Target>
 
   <!-- Overlay the custom threaded mono runtime pack (celeste dotnet.zip contents). -->
