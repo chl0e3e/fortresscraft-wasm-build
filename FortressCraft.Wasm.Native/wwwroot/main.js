@@ -19,7 +19,10 @@ const api = await dotnet
     .withConfig({ pthreadPoolInitialSize: 16 })
     .withModuleConfig({
         canvas,
-        print: (m) => { buf('[out]', m); console.log('[native]', m); },
+        // Buffer-only for stdout: the game logs every frame in-world, and mirroring each
+        // line to the devtools console measurably drags the main thread. Read
+        // window.__fcLogs (or the /__log POST) instead.
+        print: (m) => buf('[out]', m),
         printErr: (m) => {
             if (typeof m === 'string' && m.includes('emscripten_set_main_loop_timing')) return;
             buf('[err]', m);
