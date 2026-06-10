@@ -36,8 +36,11 @@ fi
 if [ ! -d "$STATICS/emsdk/upstream" ] && [ ! -d "$STATICS/emsdk/emscripten" ]; then
   echo "==== fetch + unzip OffscreenCanvas-patched emsdk (emsdk.zip, ~660 MB) ===="
   curl -fSL "$BASE/emsdk.zip" -o "$STATICS/emsdk.zip"
-  rm -rf "$STATICS/emsdk"; mkdir -p "$STATICS/emsdk"
-  unzip -q -o "$STATICS/emsdk.zip" -d "$STATICS/emsdk"
+  # emsdk.zip already contains a top-level emsdk/ dir, so extract INTO $STATICS (not
+  # $STATICS/emsdk, which would double-nest to statics/emsdk/emsdk/ and break the csproj's
+  # $(EmsdkRoot)node/bin/node path). Matches celeste's `unzip emsdk.zip -d statics/`.
+  rm -rf "$STATICS/emsdk"
+  unzip -q -o "$STATICS/emsdk.zip" -d "$STATICS"
 fi
 
 # ---- 2. publish the head (untrimmed, plain dll for the patcher) -------------
