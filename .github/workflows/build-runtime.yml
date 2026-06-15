@@ -1,0 +1,47 @@
+name: Build mono wasm runtime (from source)
+# Builds OUR copy of the threaded / OffscreenCanvas-capable mono 10.0.3 runtime pack from
+# the r58Playz/dotnet-runtime@wasm-10.0.3 fork, so the AOT runtime artifact is provably our
+# build rather than a redistributed third-party binary. The stock Microsoft Mono.browser-wasm
+# runtime (single- or multi-thread) hangs at init in this OffscreenCanvas+threads setup; this
+# fork's startup.ts/worker-thread.ts patch fixes it. Output zip layout (data/ + runtimes/
+# browser-wasm/) matches celeste's dotnet.zip so build-aot-{win.ps1,host.sh,.sh} consume it
+# unchanged. Upload-only (not auto-released) so the artifact is boot-tested before publishing.
+on:
+  workflow_dispatch:
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    name: mono+libs browser-wasm (AOT, threads)
+    steps:
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.56'          # matches the dotnet-pinned emsdk + our AOT cross + the seds
+      - name: Install dependencies
+        run: |
+          sudo apt -y update
+          sudo apt install -y ninja-build cmake llvm lld clang build-essential \
+            python-is-python3 curl git lldb libicu-dev liblttng-ust-dev libssl-dev \
+            libkrb5-dev pigz cpio p7zip-full
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Clone runtime fork (r58Playz/dotnet-runtime @ wasm-10.0.3)
+        run: git clone -b wasm-10.0.3 --depth 1 https://github.com/r58Playz/dotnet-runtime runtime
+      - name: Build mono+libs (browser-wasm, AOT, threads)
+        working-directory: runtime
+        run: ./build.sh -os browser -s mono+libs /p:RunAOTCompilation=true /p:WasmEnableThreads=true -c Release
+      - name: Stage + zip the runtime pack
+        run: |
+          PACK="runtime/artifacts/bin/microsoft.netcore.app.runtime.browser-wasm/Release"
+          if [ ! -d "$PACK/runtimes/browser-wasm" ]; then
+            echo "FATAL: runtime pack not found at $PACK"; ls -la runtime/artifacts/bin 2>/dev/null || true; exit 1
+          fi
+          ( cd "$PACK" && 7z a "$GITHUB_WORKSPACE/fc-wasm-mono-runtime.zip" './*' >/dev/null )
+          echo "=== zip top-level ==="; 7z l "$GITHUB_WORKSPACE/fc-wasm-mono-runtime.zip" | grep -E "browser-wasm|data|runtimes" | head -10
+          sha256sum "$GITHUB_WORKSPACE/fc-wasm-mono-runtime.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fc-wasm-mono-runtime
+          path: fc-wasm-mono-runtime.zip
+          retention-days: 14
