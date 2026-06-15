@@ -1,0 +1,64 @@
+name: Build mono wasm runtime (minimal own-fork)
+# Approach B: build the runtime pack from UPSTREAM dotnet/runtime release/10.0 with ONLY the
+# single threading/OffscreenCanvas-boot commit f024364f6b cherry-picked on top — no MonoMod-SRE
+# commits (those are for RuntimeDetour, which we don't use — we patch statically) and no perf
+# commits. This owns the *patch set*, not just the build: it's provably upstream + 9 reviewable
+# lines across 2 files. The cherry-pick was pre-verified to apply cleanly (jiterpreter_allocate_tables
+# is already imported upstream; all context anchors match). Output zip layout matches Approach A /
+# celeste exactly, so the AOT scripts consume it unchanged. Upload-only — must be boot-tested in a
+# real browser (Chrome SAB needs a secure context) before it replaces the proven Approach A asset,
+# because a dropped fork commit could be load-bearing.
+on:
+  workflow_dispatch:
+
+env:
+  RUNTIME_FIX_COMMIT: f024364f6b456268939961e60ded79ff163bdd7a
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    name: mono+libs browser-wasm (AOT, threads) — upstream + 1 commit
+    steps:
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '3.1.56'
+      - name: Install dependencies
+        run: |
+          sudo apt -y update
+          sudo apt install -y ninja-build cmake llvm lld clang build-essential \
+            python-is-python3 curl git lldb libicu-dev liblttng-ust-dev libssl-dev \
+            libkrb5-dev pigz cpio p7zip-full
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Clone upstream release/10.0 + cherry-pick the single boot fix
+        run: |
+          # blobless clone: fast, but keeps the full commit graph so cherry-pick has its base.
+          git clone --filter=blob:none -b release/10.0 https://github.com/dotnet/runtime runtime
+          cd runtime
+          git config user.email "build@chl0e3e.local"
+          git config user.name  "fc-runtime-build"
+          git remote add r58 https://github.com/r58Playz/dotnet-runtime
+          git fetch --no-tags r58 "$RUNTIME_FIX_COMMIT"
+          echo "==== base release/10.0 head: $(git rev-parse --short HEAD) ===="
+          git cherry-pick -x "$RUNTIME_FIX_COMMIT"
+          echo "==== after cherry-pick: ===="; git log --oneline -2
+          echo "==== confirm the 2 files actually changed (9 lines): ===="
+          git show --stat HEAD | tail -6
+      - name: Build mono+libs (browser-wasm, AOT, threads)
+        working-directory: runtime
+        run: ./build.sh -os browser -s mono+libs /p:RunAOTCompilation=true /p:WasmEnableThreads=true -c Release
+      - name: Stage + zip the runtime pack
+        run: |
+          PACK="runtime/artifacts/bin/microsoft.netcore.app.runtime.browser-wasm/Release"
+          if [ ! -d "$PACK/runtimes/browser-wasm" ]; then
+            echo "FATAL: runtime pack not found at $PACK"; ls -la runtime/artifacts/bin 2>/dev/null || true; exit 1
+          fi
+          ( cd "$PACK" && 7z a "$GITHUB_WORKSPACE/fc-wasm-mono-runtime-minimal.zip" './*' >/dev/null )
+          echo "=== zip top-level ==="; 7z l "$GITHUB_WORKSPACE/fc-wasm-mono-runtime-minimal.zip" | grep -E "browser-wasm|data|runtimes" | head -10
+          sha256sum "$GITHUB_WORKSPACE/fc-wasm-mono-runtime-minimal.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fc-wasm-mono-runtime-minimal
+          path: fc-wasm-mono-runtime-minimal.zip
+          retention-days: 14
