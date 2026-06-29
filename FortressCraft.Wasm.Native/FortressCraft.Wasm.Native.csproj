@@ -111,6 +111,12 @@
     <NativeFileReference Include="__Native.c" />
     <!-- WASMFS OPFS/fetch mounts (content delivery) + thread-dump helper. -->
     <NativeFileReference Include="Emscripten.c" />
+    <!-- Steamworks flat-API forwarding shim: exports the steam_api64 symbols the
+         injected (interpreted) Steamworks.NET resolves at runtime, forwarding them
+         over the localhost bridge to the launcher's real Steam. MUST be a direct
+         object (not an .a) so its EMSCRIPTEN_KEEPALIVE exports survive — mono's
+         dynamic P/Invoke lookup needs them by name. Game-agnostic (Valve ABI only). -->
+    <NativeFileReference Include="steam_api64.c" />
   </ItemGroup>
 
   <!-- Point emscripten at the custom (frozen, patched) emsdk instead of the SDK-bundled one.
