@@ -5,14 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FortressCraft (wasm, OffscreenCanvas)</title>
   <style>
-    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
     /* The class MUST be ".canvas" — the dotnet.native.js OffscreenCanvas sed transfers
        transferredCanvasNames=[".canvas"] to the worker thread FNA runs on. */
     canvas.canvas { display: block; width: 100vw; height: 100vh; }
+
+    /* Boot overlay: shows progress + surfaces errors so a failed boot isn't a silent black screen. */
+    #boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 14px; color: #cdd6f4; background: #11111b; z-index: 10;
+            transition: opacity .4s ease; padding: 24px; box-sizing: border-box; }
+    #boot.hide { opacity: 0; pointer-events: none; }
+    #boot-spin { width: 38px; height: 38px; border: 4px solid #313244; border-top-color: #89b4fa;
+                 border-radius: 50%; animation: spin 1s linear infinite; }
+    #boot.err #boot-spin { display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #boot-stage { font-size: 16px; font-weight: 600; }
+    #boot.err #boot-stage { color: #f38ba8; }
+    #boot-log { max-width: 90vw; max-height: 40vh; overflow: auto; margin: 0; font: 12px/1.45 ui-monospace, monospace;
+                color: #9399b2; white-space: pre-wrap; word-break: break-word; }
+    #boot.err #boot-log { color: #f2cdcd; }
   </style>
 </head>
 <body>
   <canvas class="canvas" id="canvas" tabindex="-1"></canvas>
+  <div id="boot">
+    <div id="boot-spin"></div>
+    <div id="boot-stage">Starting…</div>
+    <pre id="boot-log"></pre>
+  </div>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
