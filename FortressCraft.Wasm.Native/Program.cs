@@ -20,12 +20,33 @@ Environment.SetEnvironmentVariable("FNA3D_FORCE_DRIVER", "OpenGL");
 string asmName  = Environment.GetEnvironmentVariable("FNA_GAME_ASSEMBLY") ?? "FortressCraft";
 string typeName = Environment.GetEnvironmentVariable("FNA_GAME_ENTRY_TYPE") ?? "BasicXNAProject.Game1";
 
-Console.WriteLine($"FNA-wasm loader: booting {asmName}!{typeName} (SDL3 + OffscreenCanvas)");
+// Console output is mirrored onto the on-page boot overlay by main.js, so these stages double as
+// live boot progress AND as the diagnostic when the screen would otherwise just go black.
+Console.WriteLine($"loader: booting {asmName}!{typeName} (SDL3 + OffscreenCanvas)");
 
-// The injected game assembly is in the boot manifest, so resolve it by simple name.
-Assembly gameAsm = Assembly.Load(new AssemblyName(asmName));
-Type gameType = gameAsm.GetType(typeName, throwOnError: true);
+try
+{
+    // The injected game assembly is in the boot manifest, so resolve it by simple name.
+    Console.WriteLine($"loader: resolving assembly '{asmName}'");
+    Assembly gameAsm = Assembly.Load(new AssemblyName(asmName));
 
-// FortressCraft's Game1 derives from Microsoft.Xna.Framework.Game; construct + Run.
-using var game = (Game)Activator.CreateInstance(gameType);
-game.Run();
+    Console.WriteLine($"loader: resolving entry type '{typeName}'");
+    Type gameType = gameAsm.GetType(typeName, throwOnError: true);
+
+    // FortressCraft's Game1 derives from Microsoft.Xna.Framework.Game; construct + Run.
+    Console.WriteLine("loader: constructing game (Game1 ctor: SteamManager, content, world)");
+    using var game = (Game)Activator.CreateInstance(gameType);
+
+    Console.WriteLine("loader: game.Run() — entering FNA main loop");
+    game.Run();
+}
+catch (Exception ex)
+{
+    // Surface the full exception (incl. fail-closed Steam/ownership refusals) instead of dying
+    // silently to a black screen. main.js shows this on the overlay and POSTs it to /__log.
+    Console.WriteLine("loader: FATAL during boot:");
+    for (Exception e = ex; e != null; e = e.InnerException)
+        Console.WriteLine($"  {e.GetType().Name}: {e.Message}");
+    Console.WriteLine(ex.StackTrace);
+    throw;
+}
