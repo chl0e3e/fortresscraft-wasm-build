@@ -552,6 +552,7 @@ GS_SET_STR(SetModDir,          "ModDir")
 GS_SET_STR(SetServerName,      "ServerName")
 GS_SET_STR(SetMapName,         "MapName")
 GS_SET_STR(SetGameData,        "GameData")
+GS_SET_STR(SetGameTags,        "GameTags")
 
 #define GS_SET_FLAG(Name, Field) \
   EMSCRIPTEN_KEEPALIVE void SteamAPI_ISteamGameServer_##Name(void *p, int v) { \
@@ -635,3 +636,49 @@ EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamGameServerNetworking_CloseP2PSessionWith
     (void)p; char req[64]; snprintf(req, sizeof req, "GSCloseP2P\t%llu", (unsigned long long)steamIDRemote);
     return bridge_bool(req);
 }
+
+/* ===========================================================================================
+ * SAFE STUBS — flat functions the game calls that aren't fully forwarded yet. With
+ * WasmAllowUndefinedSymbols, ANY flat function the game calls that we don't export becomes an
+ * abort-stub that kills the runtime ("missing function: ..."). These return safe defaults so the
+ * game BOOTS and runs single-player. Real forwarding for auth tickets, lobbies, and the server
+ * browser is a later phase (they currently no-op / report empty). Signatures verbatim from
+ * NativeMethods.cs — arity/types matter (a mismatch is a hard wasm LinkError).
+ * =========================================================================================== */
+
+/* ISteamUser: server-auth ticket. Return a non-zero handle + empty ticket so the game proceeds
+ * (k_HAuthTicketInvalid == 0). Real ticket forwarding (+ GetAuthSessionTicketResponse_t) is later. */
+EMSCRIPTEN_KEEPALIVE uint32_t SteamAPI_ISteamUser_GetAuthSessionTicket(
+        void *p, void *pTicket, int cbMaxTicket, uint32_t *pcbTicket) {
+    (void)p; (void)pTicket; (void)cbMaxTicket;
+    if (pcbTicket) *pcbTicket = 0;
+    return 1;
+}
+
+/* ISteamUserStats: another user's stat — not tracked locally; report "unavailable". */
+EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamUserStats_GetUserStatInt32(void *p, uint64_t steamID, const char *name, int *pData) {
+    (void)p; (void)steamID; (void)name; if (pData) *pData = 0; return 0;
+}
+EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamUserStats_GetUserStatFloat(void *p, uint64_t steamID, const char *name, float *pData) {
+    (void)p; (void)steamID; (void)name; if (pData) *pData = 0.0f; return 0;
+}
+
+/* ISteamMatchmaking: lobbies. No async call is issued (return 0 = invalid SteamAPICall_t), so no
+ * LobbyCreated_t/LobbyEnter_t fires; setters report success. MP lobbies are a later phase. */
+EMSCRIPTEN_KEEPALIVE uint64_t SteamAPI_ISteamMatchmaking_CreateLobby(void *p, int eLobbyType, int cMaxMembers) { (void)p; (void)eLobbyType; (void)cMaxMembers; return 0; }
+EMSCRIPTEN_KEEPALIVE uint64_t SteamAPI_ISteamMatchmaking_JoinLobby(void *p, uint64_t steamIDLobby) { (void)p; (void)steamIDLobby; return 0; }
+EMSCRIPTEN_KEEPALIVE uint64_t SteamAPI_ISteamMatchmaking_GetLobbyOwner(void *p, uint64_t steamIDLobby) { (void)p; (void)steamIDLobby; return 0; }
+EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamMatchmaking_SetLobbyData(void *p, uint64_t lobby, const char *key, const char *value) { (void)p; (void)lobby; (void)key; (void)value; return 1; }
+EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamMatchmaking_SetLobbyJoinable(void *p, uint64_t lobby, int bLobbyJoinable) { (void)p; (void)lobby; (void)bLobbyJoinable; return 1; }
+EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamMatchmaking_SetLobbyOwner(void *p, uint64_t lobby, uint64_t newOwner) { (void)p; (void)lobby; (void)newOwner; return 1; }
+EMSCRIPTEN_KEEPALIVE int SteamAPI_ISteamMatchmaking_SetLobbyType(void *p, uint64_t lobby, int eLobbyType) { (void)p; (void)lobby; (void)eLobbyType; return 1; }
+
+/* ISteamMatchmakingServers: server browser. Empty list (no servers); the server-browser response
+ * interface isn't forwarded yet. Handles are opaque (null is fine — the game just gets 0 results). */
+EMSCRIPTEN_KEEPALIVE void  SteamAPI_ISteamMatchmakingServers_CancelServerQuery(void *p, int hServerQuery) { (void)p; (void)hServerQuery; }
+EMSCRIPTEN_KEEPALIVE int   SteamAPI_ISteamMatchmakingServers_GetServerCount(void *p, void *hRequest) { (void)p; (void)hRequest; return 0; }
+EMSCRIPTEN_KEEPALIVE void *SteamAPI_ISteamMatchmakingServers_GetServerDetails(void *p, void *hRequest, int iServer) { (void)p; (void)hRequest; (void)iServer; return 0; }
+EMSCRIPTEN_KEEPALIVE int   SteamAPI_ISteamMatchmakingServers_PingServer(void *p, uint32_t unIP, uint16_t usPort, void *pResponse) { (void)p; (void)unIP; (void)usPort; (void)pResponse; return 0; }
+EMSCRIPTEN_KEEPALIVE void  SteamAPI_ISteamMatchmakingServers_ReleaseRequest(void *p, void *hRequest) { (void)p; (void)hRequest; }
+EMSCRIPTEN_KEEPALIVE void *SteamAPI_ISteamMatchmakingServers_RequestInternetServerList(void *p, uint32_t iApp, void *ppchFilters, uint32_t nFilters, void *pResponse) { (void)p; (void)iApp; (void)ppchFilters; (void)nFilters; (void)pResponse; return 0; }
+EMSCRIPTEN_KEEPALIVE void *SteamAPI_ISteamMatchmakingServers_RequestLANServerList(void *p, uint32_t iApp, void *pResponse) { (void)p; (void)iApp; (void)pResponse; return 0; }
