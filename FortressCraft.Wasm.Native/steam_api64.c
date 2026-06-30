@@ -112,13 +112,23 @@ static const char *bridge_str(const char *req, char *dst, int cap) {
  * the game's registered Callback<T>/CallResult<T> via their vtables. Driven by RunCallbacks. */
 static void sml_dispatch_callbacks(void);
 
+/* Boot bring-up gate: the vtable call-through (C calling the game's managed Callback<T> fn-ptrs)
+ * is the one piece never exercised before the browser boot. Default OFF so RunCallbacks drains the
+ * launcher queue but can't crash the runtime — we first confirm the game boots without it, then
+ * turn it on once the delegate ABI is verified. */
+static int g_dispatch_enabled = 0;
+
 /* ---- lifecycle ------------------------------------------------------------ */
 /* FAIL CLOSED: return the launcher's real init result. If the bridge is absent or the player
  * doesn't own the app (DenySteamProvider / RealSteamProvider.Init()==false), this returns 0, the
  * managed SteamAPI.Init() fails, and the game refuses to run. No bridge => no play. */
 EMSCRIPTEN_KEEPALIVE int  SteamAPI_Init(void)                 { return bridge_bool("Init"); }
 EMSCRIPTEN_KEEPALIVE void SteamAPI_Shutdown(void)            { sml_bridge_call("Shutdown", (char[1]){0}, 1); }
-EMSCRIPTEN_KEEPALIVE void SteamAPI_RunCallbacks(void)        { sml_dispatch_callbacks(); }
+EMSCRIPTEN_KEEPALIVE void SteamAPI_RunCallbacks(void) {
+    static int once = 0;
+    if (!once) { once = 1; printf("loader: SteamAPI_RunCallbacks reached (vtable dispatch %s)\n", g_dispatch_enabled ? "ON" : "OFF"); }
+    sml_dispatch_callbacks();
+}
 EMSCRIPTEN_KEEPALIVE int  SteamAPI_RestartAppIfNecessary(uint32_t appid) { (void)appid; return 0; /* never relaunch via Steam */ }
 EMSCRIPTEN_KEEPALIVE int  SteamAPI_IsSteamRunning(void)      { return 1; }
 EMSCRIPTEN_KEEPALIVE int  SteamAPI_GetHSteamUser(void)       { return 1; /* non-zero handle */ }
@@ -509,6 +519,7 @@ static void dispatch_record(char *line, int gs) {
 static void sml_dispatch(int gs, const char *verb) {
     int n = bridge_drain(verb);
     if (n <= 0) return;
+    if (!g_dispatch_enabled) return;   // drained (queue stays bounded) but not dispatched — see gate above
     char *line = g_drain_buf;
     while (*line) {
         char *nl = strchr(line, '\n'); if (nl) *nl = 0;
