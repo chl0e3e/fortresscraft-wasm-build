@@ -517,9 +517,10 @@ static void dispatch_record(char *line, int gs) {
 }
 
 static void sml_dispatch(int gs, const char *verb) {
+    if (!g_dispatch_enabled) return;   /* MANAGED dispatch now drives this (sml_poll_callback): native
+                                        * RunCallbacks must NOT drain or it steals records from the pump. */
     int n = bridge_drain(verb);
     if (n <= 0) return;
-    if (!g_dispatch_enabled) return;   // drained (queue stays bounded) but not dispatched — see gate above
     char *line = g_drain_buf;
     while (*line) {
         char *nl = strchr(line, '\n'); if (nl) *nl = 0;
@@ -529,6 +530,46 @@ static void sml_dispatch(int gs, const char *verb) {
     }
 }
 static void sml_dispatch_callbacks(void) { sml_dispatch(0, "DrainCallbacks"); }   /* client pump */
+
+/* ---- MANAGED callback dispatch entry point --------------------------------------------------
+ * mono-wasm-AOT can't build the native CCallbackBase vtable (Marshal.StructureToPtr of the delegate
+ * vtable OOB-traps in get_native_to_interp). So the patched Steamworks.NET keeps a MANAGED registry
+ * and, each RunCallbacks, polls this for the launcher's forwarded records and dispatches them in
+ * managed code — no native->managed call. One poll returns one record (kind 0 = callback CB, 1 =
+ * call-result CR); managed loops until it returns 0. `gs` selects the client vs game-server pump. */
+static char *g_poll_cursor = 0;
+EMSCRIPTEN_KEEPALIVE int sml_poll_callback(int gs, int *kind, int *icb, int *failed,
+                                           uint64_t *call, unsigned char *buf, int bufcap, int *len) {
+    for (;;) {
+        if (g_poll_cursor == 0 || *g_poll_cursor == 0) {
+            int n = bridge_drain(gs ? "DrainGSCallbacks" : "DrainCallbacks");
+            if (n <= 0) { g_poll_cursor = 0; return 0; }
+            g_poll_cursor = g_drain_buf;
+        }
+        char *line = g_poll_cursor;
+        char *nl = strchr(line, '\n');
+        if (nl) { *nl = 0; g_poll_cursor = nl + 1; } else { g_poll_cursor = line + strlen(line); }
+        if (line[0] == 'C' && line[1] == 'B') {
+            char *a1 = strchr(line, '\t');   if (!a1) continue;
+            char *a2 = strchr(a1 + 1, '\t'); if (!a2) continue;
+            *a2 = 0;
+            *kind = 0; *icb = (int)strtol(a1 + 1, NULL, 10); *failed = 0; *call = 0;
+            *len = b64_decode(a2 + 1, buf, bufcap);
+            return 1;
+        } else if (line[0] == 'C' && line[1] == 'R') {
+            char *a1 = strchr(line, '\t');   if (!a1) continue;
+            char *a2 = strchr(a1 + 1, '\t'); if (!a2) continue;
+            char *a3 = strchr(a2 + 1, '\t'); if (!a3) continue;
+            char *a4 = strchr(a3 + 1, '\t'); if (!a4) continue;
+            *a2 = 0; *a4 = 0;
+            *kind = 1; *call = strtoull(a1 + 1, NULL, 10);
+            *icb = (int)strtol(a2 + 1, NULL, 10); *failed = (int)strtol(a3 + 1, NULL, 10);
+            *len = b64_decode(a4 + 1, buf, bufcap);
+            return 1;
+        }
+        /* unknown line — skip, keep scanning */
+    }
+}
 
 /* ===========================================================================================
  * PHASE 3 — hosting (game server). The launcher runs a REAL Steam game server (listen-server) on
