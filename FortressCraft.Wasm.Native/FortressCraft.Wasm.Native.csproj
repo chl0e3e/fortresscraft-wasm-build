@@ -48,7 +48,10 @@
 
     <!-- THE OffscreenCanvas link flags (+ WebGL2 for the voxel renderer).
          MAXIMUM_MEMORY = 4 GiB - 64 KiB (one wasm page), as celeste uses. -->
-    <EmccExtraLDFlags>-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1 -sGL_ENABLE_GET_PROC_ADDRESS=1 -sWASMFS -sOFFSCREENCANVAS_SUPPORT -sMAXIMUM_MEMORY=4294901760 -sMALLOC=mimalloc -sNO_EXIT_RUNTIME=1</EmccExtraLDFlags>
+    <!-- GL flags matched to celeste-wasm's PROVEN config (celeste sets only MIN_WEBGL_VERSION=2).
+         The extra FULL_ES3=1 + GL_ENABLE_GET_PROC_ADDRESS=1 changed GL function dispatch and was the
+         likely source of FNA3D's "function signature mismatch" on WebGL context creation. -->
+    <EmccExtraLDFlags>-sMIN_WEBGL_VERSION=2 -sWASMFS -sOFFSCREENCANVAS_SUPPORT -sMAXIMUM_MEMORY=4294901760 -sMALLOC=mimalloc -sNO_EXIT_RUNTIME=1</EmccExtraLDFlags>
     <EmccEnvironment>web,worker</EmccEnvironment>
 
     <!-- Custom toolchain (FNA-version-INDEPENDENT, reused from celeste's prebuilts):
